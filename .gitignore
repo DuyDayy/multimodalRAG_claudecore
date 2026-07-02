@@ -10,3 +10,4 @@ qdrant_storage_claude/
 *.md
 !README.md
 !README_vi.md
+docker-compose.yml
