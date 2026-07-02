@@ -73,3 +73,33 @@ This system resolves the two classic challenges of Video RAG (Speed and Logical 
 - **Claude 3.5 Sonnet**: The Core intelligence used in 3 stages: Captioning (Ingestion), Routing (Query Classification), and Generation (Q&A).
 - **Qdrant**: The Vector Database storing SigLIP Vectors alongside Claude's Payload Metadata (Captions).
 - **PySceneDetect**: The optical video processing algorithm ensuring no transition moments are missed.
+
+## 🔄 Execution Flow
+
+### 1. Offline Ingestion Phase
+```mermaid
+graph TD
+    A[Raw Videos] -->|PySceneDetect| B(Smart Keyframes Extraction)
+    B --> C{Batch Processing - 16 frames}
+    C -->|Image| D[SigLIP 400M]
+    C -->|Image| E[Claude 3.5 Sonnet]
+    D -->|Generate Image Vector| F[(Qdrant Vector DB)]
+    E -->|Generate Text Caption| F
+    F -.->|Complete Storage| G[Vector + Metadata Payload]
+```
+
+### 2. Online Querying Phase
+```mermaid
+graph TD
+    U((User)) -->|Input Query/Image| R[LangGraph Router <br/>_Claude_]
+    R -->|Classify| Q{Query Type}
+    Q -->|Video KIS| T1[Retriever Agent]
+    Q -->|Textual KIS| T1
+    Q -->|Q&A| T1
+    Q -->|TRAKE| T1
+    
+    T1 -->|Hybrid Search| DB[(Qdrant DB)]
+    DB -->|Return Vector + Caption| T1
+    T1 --> G[Generator Agent <br/>_Claude_]
+    G -->|Synthesize & Infer| U
+```
