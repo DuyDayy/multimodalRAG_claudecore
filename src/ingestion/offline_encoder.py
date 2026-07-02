@@ -22,8 +22,8 @@ async def generate_caption_for_frame(llm: ChatOpenAI, image_path: str, audio_tra
     try:
         base64_img = encode_image_base64(image_path)
         
-        audio_context = f" Kèm theo đoạn hội thoại (audio) đang diễn ra: '{audio_transcript}'." if audio_transcript else ""
-        prompt = f"Đây là một khung hình.{audio_context} Hãy kết hợp thông tin hình ảnh và âm thanh (nếu có) để miêu tả ngắn gọn nhưng đầy đủ chi tiết bằng TIẾNG VIỆT về các hành động, con người, sự vật xuất hiện. Dưới 50 từ. Yêu cầu bắt buộc: KHÔNG sử dụng tiếng Anh."
+        audio_context = f" Kèm theo đoạn hội thoại (audio): '{audio_transcript}'." if audio_transcript else ""
+        prompt = f"HÃY QUÉT TOÀN BỘ BỨC ẢNH NÀY.{audio_context} YÊU CẦU BẮT BUỘC: 1. Trích xuất toàn bộ văn bản (chữ viết, con số, biển báo, nhãn mác, biểu đồ hoặc giao diện nếu có) xuất hiện trên khung hình dù mờ đến đâu. 2. Miêu tả chi tiết bối cảnh, con người, sự vật và hành động đang diễn ra. Hãy trình bày ở dạng văn bản dày đặc (Dense Text) bằng TIẾNG VIỆT để tối ưu hóa cho hệ thống tìm kiếm. Yêu cầu tính tổng quát, không bỏ sót bất kỳ chi tiết nào."
         
         messages = [
             HumanMessage(content=[
