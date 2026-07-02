@@ -103,3 +103,15 @@ graph TD
     T1 --> G[Generator Agent <br/>_Claude_]
     G -->|Synthesize & Infer| U
 ```
+
+## 🚀 Roadmap: Speed & Accuracy Upgrades
+The project is continuously researched to break the boundaries of **Speed** and **Accuracy**. Below are the upgrade paths currently under consideration:
+
+### ⚡ Speed Optimization
+- **Asynchronous Batching:** Currently, the Claude Vision API pipeline runs sequentially. By applying `asyncio` and `aiohttp` (or Langchain Batch), the system can dispatch 16-32 simultaneous requests to Claude. **Expectation:** Reduce the encoding time of a 1-hour video from 15 minutes down to just **1-2 minutes**.
+- **Vector Pre-filtering:** Utilize Qdrant's Metadata Payload to pre-filter timeframes (Timestamps) or Camera Angles before calculating Cosine Similarity, pushing the retrieve speed to milliseconds even on a 1000-hour dataset.
+
+### 🎯 Accuracy Optimization
+- **Sliding Window Context (For TRAKE):** Instead of storing metadata for disjointed frames, the system will group the Captions of 3-5 consecutive scenes into a single "Narrative Chunk". This helps the system understand the sequence of actions (Action A happens before Action B), maximizing the accuracy for Temporal Retrieval (TRAKE) queries.
+- **Whisper Integration (Speech-to-Text):** Capitalize on the neglected audio stream. Run Whisper locally to extract transcripts, then concatenate this audio text with Claude's visual caption. The system will gain the ability to answer extremely difficult context queries that rely heavily on sound.
+- **Self-Correction Node (Evaluator Agent):** Inject an intermediary Agent (Evaluator) into LangGraph. If the Retriever returns results with a low confidence score, the Evaluator will block the Generator, force the Retriever to rewrite the query (Query Rewriting), and search again until the correct video segment is found.

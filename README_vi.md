@@ -103,3 +103,15 @@ graph TD
     T1 --> G[Generator Agent <br/>_Claude_]
     G -->|Tổng hợp & Suy luận logic| U
 ```
+
+## 🚀 Lộ Trình Nâng Cấp (Roadmap: Speed & Accuracy)
+Dự án liên tục được nghiên cứu để phá vỡ các giới hạn về **Tốc độ xử lý (Speed)** và **Độ chính xác (Accuracy)**. Dưới đây là các hướng nâng cấp đang được cân nhắc:
+
+### ⚡ Về Tốc Độ (Speed)
+- **Tối Ưu Asynchronous Batching:** Hiện tại, pipeline gọi Claude Vision API đang chạy tuần tự từng bước. Bằng cách áp dụng `asyncio` và `aiohttp` (hoặc Langchain Batch), hệ thống có thể bắn 16-32 request đồng thời tới Claude. **Kỳ vọng:** Giảm thời gian mã hóa (Encode) video 1 tiếng từ 15 phút xuống chỉ còn **1-2 phút**.
+- **Vector Pre-filtering:** Sử dụng Metadata Payload của Qdrant để lọc trước các mốc thời gian (Timestamp) hoặc Camera Angle trước khi tính toán Cosine Similarity, giúp tốc độ truy vấn (Retrieve) tính bằng mili-giây kể cả trên tập dữ liệu 1000 giờ.
+
+### 🎯 Về Độ Chính Xác (Accuracy)
+- **Sliding Window Context (Dành cho TRAKE):** Thay vì lưu metadata của từng khung hình rời rạc, hệ thống sẽ gộp Caption của 3-5 cảnh liên tiếp thành một "Khối Ngữ Cảnh Thời Gian" (Narrative Chunk). Việc này giúp hệ thống hiểu được chuỗi hành động (Hành động A xảy ra trước, sau đó tới Hành động B), đẩy độ chính xác của các câu hỏi TRAKE lên tối đa.
+- **Tích hợp Whisper (Speech-to-Text):** Tận dụng luồng âm thanh bị bỏ sót. Chạy Whisper cục bộ để bóc băng âm thanh, sau đó nối (concat) đoạn hội thoại/âm thanh này vào chung với Caption của Claude. Hệ thống sẽ có khả năng trả lời các câu hỏi cực khó về bối cảnh âm thanh mà chỉ nhìn hình ảnh không thể trả lời được.
+- **Nút Tự Sửa Lỗi (Self-Correction Agent):** Bổ sung thêm một Agent trung gian (Evaluator) vào LangGraph. Nếu Retriever trả về kết quả có độ tự tin (Score) thấp, Evaluator sẽ bắt Retriever tự động viết lại từ khóa (Query Rewriting) và tìm kiếm lại cho đến khi tìm được đúng phân đoạn video chứa đáp án.
