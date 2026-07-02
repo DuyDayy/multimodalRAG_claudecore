@@ -72,6 +72,7 @@ class MultimodalEmbedder:
                     "timestamp": frame["timestamp_sec"],
                     "frame_path": frame["path"],
                     "caption": frame.get("caption", ""),
+                    "narrative_context": frame.get("narrative_context", ""),
                     "type": "frame"
                 }
             )

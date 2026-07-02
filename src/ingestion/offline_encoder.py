@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import logging
+import asyncio
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
@@ -17,7 +18,7 @@ def encode_image_base64(image_path: str) -> str:
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-def generate_caption_for_frame(llm: ChatOpenAI, image_path: str) -> str:
+async def generate_caption_for_frame(llm: ChatOpenAI, image_path: str) -> str:
     try:
         base64_img = encode_image_base64(image_path)
         prompt = "Hãy miêu tả ngắn gọn nhưng đầy đủ chi tiết về các hành động, con người, sự vật xuất hiện trong ảnh này. Dưới 50 từ."
@@ -27,11 +28,47 @@ def generate_caption_for_frame(llm: ChatOpenAI, image_path: str) -> str:
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
             ])
         ]
-        response = llm.invoke(messages)
+        response = await llm.ainvoke(messages)
         return response.content
     except Exception as e:
         logger.error(f"Lỗi khi gọi Claude Captioning cho {image_path}: {e}")
         return ""
+
+async def encode_video_async(video_id: str, frames_info: list, llm: ChatOpenAI, embedder: MultimodalEmbedder):
+    BATCH_SIZE = 16
+    
+    # Sinh Caption Asynchronous
+    logger.info(f"Đang sinh caption đồng thời cho {len(frames_info)} keyframes của {video_id}...")
+    tasks = [generate_caption_for_frame(llm, frame["path"]) for frame in frames_info]
+    captions = await asyncio.gather(*tasks)
+    
+    # Xây dựng Sliding Window (Narrative Context) và Batching
+    batch_data = []
+    for i, frame in enumerate(frames_info):
+        frame_path = frame["path"]
+        timestamp_sec = frame["timestamp_sec"]
+        current_caption = captions[i]
+        
+        # Lấy caption của ảnh trước và sau (nếu có)
+        prev_cap = captions[i-1] if i > 0 else ""
+        next_cap = captions[i+1] if i < len(captions) - 1 else ""
+        
+        narrative_context = f"Trọng tâm: {current_caption} | "
+        if prev_cap: narrative_context += f"Trước đó: {prev_cap} | "
+        if next_cap: narrative_context += f"Tiếp theo: {next_cap}"
+        
+        batch_data.append({
+            "path": frame_path,
+            "video_id": video_id,
+            "timestamp_sec": timestamp_sec,
+            "caption": current_caption,
+            "narrative_context": narrative_context
+        })
+        
+        if len(batch_data) >= BATCH_SIZE or i == len(frames_info) - 1:
+            logger.info(f"Đang đẩy lô {len(batch_data)} keyframes vào Qdrant...")
+            embedder.upsert_batch(batch_data)
+            batch_data = []
 
 def encode_all_videos(raw_dir: str = "data/raw_videos", temp_frame_dir: str = "data/temp_frames"):
     """
@@ -51,8 +88,6 @@ def encode_all_videos(raw_dir: str = "data/raw_videos", temp_frame_dir: str = "d
     
     total_frames = 0
     start_time = time.time()
-    
-    BATCH_SIZE = 16
 
     for video_file in video_files:
         video_path = os.path.join(raw_dir, video_file)
@@ -63,29 +98,10 @@ def encode_all_videos(raw_dir: str = "data/raw_videos", temp_frame_dir: str = "d
         frames_info = process_video(video_path, output_dir=temp_frame_dir)
         logger.info(f"Đã trích xuất {len(frames_info)} keyframes từ {video_id}.")
         
-        # Bước 2 & 3: Sinh Caption & Nhúng theo Batch
-        batch_data = []
-        for i, frame in enumerate(frames_info):
-            frame_path = frame["path"]
-            timestamp_sec = frame["timestamp_sec"]
-            
-            # Sinh Caption
-            logger.info(f"Đang gọi Claude miêu tả ảnh {i+1}/{len(frames_info)}...")
-            caption = generate_caption_for_frame(llm, frame_path)
-            
-            batch_data.append({
-                "path": frame_path,
-                "video_id": video_id,
-                "timestamp_sec": timestamp_sec,
-                "caption": caption
-            })
-            
-            if len(batch_data) >= BATCH_SIZE or i == len(frames_info) - 1:
-                logger.info(f"Đang đẩy lô {len(batch_data)} keyframes vào Qdrant...")
-                embedder.upsert_batch(batch_data)
-                batch_data = []
-                
-        total_frames += len(frames_info)
+        # Bước 2 & 3: Sinh Caption Async & Nhúng vào Qdrant
+        if frames_info:
+            asyncio.run(encode_video_async(video_id, frames_info, llm, embedder))
+            total_frames += len(frames_info)
 
     elapsed = time.time() - start_time
     logger.info(f"HOÀN TẤT! Đã mã hóa tổng cộng {total_frames} keyframes trong {elapsed:.2f} giây.")
