@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    volumes:
+      - ./qdrant_storage_claude:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__MAX_MEMORY_FRACTION=0.5
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6381:6379"
+    volumes:
+      - ./redis_data_claude:/data
+    command: redis-server --save 60 1 --loglevel warning
+    restart: unless-stopped

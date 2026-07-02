@@ -1,0 +1,12 @@
+.env
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+data/
+qdrant_storage/
+qdrant_storage_claude/
+.system_generated/
+*.md
+!README.md
+!README_vi.md
