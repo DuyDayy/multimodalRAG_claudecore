@@ -5,9 +5,7 @@ qdrant-client
 pydantic
 python-dotenv
 streamlit
-ffmpeg-python
 redis
-# For local VLM inference (Assuming Ollama is used via langchain wrapper or standard requests)
 requests
 pillow
 numpy
@@ -15,6 +13,5 @@ yt-dlp
 torch
 torchvision
 transformers
-langchain-ollama
 sentencepiece
 scenedetect[opencv]
