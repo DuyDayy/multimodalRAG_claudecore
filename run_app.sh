@@ -17,4 +17,4 @@ source .venv/bin/activate
 
 # Khởi chạy giao diện Streamlit
 echo "Đang khởi chạy Streamlit..."
-streamlit run app.py
+.venv/bin/python -m streamlit run app.py

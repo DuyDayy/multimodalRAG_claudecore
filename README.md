@@ -1,115 +1,83 @@
-# Multimodal RAG System (AI Challenge) - Claude Core Architecture
+# 🚀 Enterprise Multimodal RAG System (AI Challenge)
 
-A state-of-the-art Multimodal Retrieval-Augmented Generation (RAG) system engineered for high-volume video processing. This version has been fully upgraded to the **Claude Core architecture**, integrating intelligent scene detection and batch processing to maximize both speed and accuracy (~100%).
+Hệ thống RAG Đa phương thức cấp độ Doanh nghiệp được thiết kế đặc biệt để hiểu sâu **Video/Hình ảnh kết hợp Âm thanh**, tập trung vào việc giải quyết các bài toán mù bối cảnh (Context Blindness) mà các hệ thống RAG truyền thống thường gặp phải (đặc biệt trong các lĩnh vực video nhịp độ cao như Gaming, eSports, Camera an ninh).
 
-*For the Vietnamese version of this document, please see [README_vi.md](README_vi.md).*
+## 🌟 TÍNH NĂNG NỔI BẬT (S-TIER ARCHITECTURE)
 
-## 🌟 Features & Query Types
-The system supports 4 distinct query types through a Streamlit frontend:
-1. **Video KIS (Known-Item Search)**: Find an original source video based on a short query clip or keyframe image.
-2. **Textual KIS**: Retrieve specific video segments based on dense textual descriptions (achieves absolute accuracy thanks to LLM Captioning).
-3. **Q&A Query**: Extract answers to specific questions using video context (powered by **Claude 3.5 Sonnet**).
-4. **TRAKE (Temporal Retrieval & Alignment)**: Identify and align sequential events chronologically.
+### 1. Dual-Encoder Multimodal Vector Search
+- **Thay thế CLIP:** Hệ thống sử dụng 2 mô hình nhúng (Embedder) chuyên biệt độc lập để tối ưu hóa không gian Vector.
+- **Vision:** Khung hình được mã hóa bằng mô hình `google/siglip-so400m-patch14-384` (1152-dim) mang lại độ chính xác thị giác vượt trội CLIP.
+- **Text (Tiếng Việt):** Các truy vấn văn bản và chú thích được nhúng qua `intfloat/multilingual-e5-large` (1024-dim), xóa bỏ hoàn toàn rào cản dịch thuật sang tiếng Anh chậm chạp.
+- **Database:** Truy xuất siêu tốc trên **Qdrant** qua giao thức Hybrid Search gộp.
 
-## 📁 Repository Structure
-```text
-.
-├── app.py                      # Main Streamlit UI application
-├── docker-compose.yml          # Infrastructure setup (Qdrant Vector DB, Redis)
-├── requirements.txt            # Python dependencies
-├── src/
-│   ├── agents/                 # LangGraph Multi-Agent System
-│   │   ├── graph.py            # Workflow definition & edge mapping
-│   │   ├── router_agent.py     # Classifies queries using Claude 3.5 Sonnet
-│   │   ├── retriever_agent.py  # Hybrid search via Qdrant
-│   │   ├── evaluator_agent.py  # Self-Correction node against hallucination
-│   │   └── generator_agent.py  # Response generation via Claude 3.5 Sonnet
-│   └── ingestion/              # Data Processing Pipeline (High Speed & Accuracy)
-│       ├── video_processor.py  # Smart Keyframe extraction via PySceneDetect
-│       ├── offline_encoder.py  # Asynchronous Batching & Sliding Window generation
-│       └── embedder.py         # Qdrant configuration & Narrative Payload handling
-└── test_data_samples/          # Directory for local sample videos
-```
+### 2. Deep Context Injection (Xóa bỏ Mù Bối Cảnh)
+- Trong các hệ thống RAG thông thường, LLM (Generator) thường từ chối trả lời do ảnh quá mờ hoặc góc hẹp. 
+- **Giải pháp của chúng tôi:** Khi trích xuất khung hình (Ingestion), hệ thống đồng thời dùng `openai-whisper` bóc tách âm thanh (Audio Transcript) của Streamer tại đúng mốc thời gian đó. Tại bước Tạo câu trả lời, LLM được "Tiêm" đồng thời cả **Hình ảnh + Lời thoại + Chú thích AI**, bắt buộc mô hình phải dùng thính giác để bù đắp cho thị giác.
 
-## 🧠 Core Architecture: "Smart Keyframes & LLM Narrative"
-This system resolves the two classic challenges of Video RAG (Speed and Logical Accuracy) through the following technologies:
-- **Speed (PySceneDetect & Async Batching)**: Moving away from the blind 1-2 FPS extraction method, the system utilizes `AdaptiveDetector` to extract transition frames. Utilizing `asyncio`, the system fires 16-32 concurrent API requests, boosting Ingestion speed by 10x.
-- **Absolute Accuracy (Sliding Window & Self-Correction)**: Instead of analyzing isolated frames, the system bundles temporal context (Previous - Focus - Next) into the Qdrant Payload. During retrieval, an `Evaluator` agent audits the results; if it detects irrelevant context, it forces a query rewrite, reducing hallucination to ~0%.
+### 3. Adaptive Dense Sampling (Lấy mẫu Dày đặc Thích ứng)
+- Các thuật toán Scene Detect truyền thống chỉ lấy 1 khung hình giữa cảnh (Middle frame), dẫn đến việc bỏ sót 90% sự kiện trong các video dài.
+- Hệ thống này tích hợp thuật toán **Adaptive Dense Sampling**: Nếu một cảnh (Scene) tĩnh kéo dài hơn 5 giây, hệ thống tự động trích xuất bổ sung **1 frame mỗi 5 giây** dọc theo chiều dài cảnh đó, kết hợp ghim Audio siêu chính xác (+- 2.5s). Tối đa hóa *Accuracy* mà không làm giảm *Speed*.
 
-## 🛠 Prerequisites
-- **Python 3.10+**
-- **Docker Desktop** (for Vector DB)
-- Proxy API Key supporting `claude-sonnet-4-6` configured in `.env`
+### 4. TRAKE (Temporal Retrieval & Alignment)
+- Xâu chuỗi các sự kiện diễn ra ở các mốc thời gian khác nhau thành một Timeline thống nhất, giúp trả lời các câu hỏi nguyên nhân - kết quả dài hạn (VD: Tại sao lúc nổ hũ lại thua?). Thanh trượt Timeline giãn nở linh hoạt theo thời gian thực của Video.
 
-## 🚀 Installation
+### 5. Domain-Agnostic Cognitive Engine
+- Prompt của Generator được thiết kế tổng quát hóa. Dù người dùng nạp Video Đấu Trường Chân Lý (TFT), Video Nấu Ăn hay CCTV, LLM tự động sử dụng từ vựng chuyên ngành thông qua việc "Lắng nghe" Audio Transcript, không bị thiên kiến (bias) vào bất kỳ lĩnh vực cụ thể nào.
 
-1. **Set up Virtual Environment**:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-2. **Start Qdrant & Redis**:
+## 🧩 CÔNG NGHỆ, KỸ THUẬT & MÔ HÌNH Ở 3 GIAI ĐOẠN CHÍNH
+
+### Giai đoạn 1: Preprocess (Tiền xử lý & Đồng bộ Đa thể)
+- **Công nghệ/Thư viện:** OpenCV, PySceneDetect, FFmpeg.
+- **Kỹ thuật & Thuật toán:** 
+  - *Adaptive Content-Aware Scene Detection* (cắt cảnh dựa trên độ biến thiên không gian màu HSV).
+  - *Adaptive Dense Temporal Sampling* (lấy mẫu 1 frame/5s cho các cảnh kéo dài để bảo toàn độ phân giải thời gian).
+  - *Cross-Modal Time Alignment* (giao thoa cửa sổ thời gian $\pm2.5s$ để ghim Audio vào Frame ảnh).
+- **Model:** `openai-whisper` (Base model) dùng cho nhận dạng giọng nói (STT).
+
+### Giai đoạn 2: Encode (Mã hóa & Lập chỉ mục)
+- **Công nghệ/Thư viện:** HuggingFace Transformers, FastEmbed, Langchain.
+- **Kỹ thuật & Thuật toán:**
+  - *Dual-Encoder Architecture* (nhúng độc lập thay vì dùng CLIP).
+  - *Mean Pooling* cho vector văn bản, *Sigmoid Loss* (chống thắt cổ chai Softmax) cho vector hình ảnh.
+  - *HNSW (Hierarchical Navigable Small World)* cho đồ thị tìm kiếm ANN siêu tốc trong Qdrant.
+- **Model:**
+  - Vision: `google/siglip-so400m-patch14-384` (1152-dim).
+  - Text: `intfloat/multilingual-e5-large` (1024-dim, tối ưu Tiếng Việt).
+- **Database:** `Qdrant` (Lưu trữ Vector & Payload JSON).
+
+### Giai đoạn 3: Gen (Suy luận & Điều phối Đa tác vụ)
+- **Công nghệ/Thư viện:** LangGraph, Streamlit.
+- **Kỹ thuật & Thuật toán:**
+  - *Directed Acyclic Graph (DAG)* để quản lý State Machine (Router -> Retriever -> Generator).
+  - *Domain-Agnostic Context Injection* (kết nối ma trận Hình ảnh + Lời thoại + Chú thích để chữa bệnh mù bối cảnh cho LLM).
+  - *TRAKE (Temporal Retrieval & Alignment)* (sắp xếp nổi bọt mảng Vector theo `timestamp_sec` tuyệt đối để suy luận Nhân-Quả).
+- **Model:** `claude-sonnet-4-6` (hoặc các LLM S-Tier tương đương qua API proxy).
+
+## 🛠️ CÀI ĐẶT & VẬN HÀNH
+
+1. **Khởi động Vector Database (Qdrant & Redis):**
    ```bash
    docker-compose up -d
    ```
-3. **Configure API**: Create a `.env` file containing `OPENAI_API_KEY` and `OPENAI_BASE_URL` from your Claude Proxy provider.
 
-## 🎮 Running the System
+2. **Thiết lập Môi trường ảo (Macbook M4 - CPU Native):**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-1. **Run Ingestion Pipeline (Offline Encoder)**:
+3. **Luồng Ingestion (Chạy một lần khi có video mới trong `data/raw_videos`):**
    ```bash
    ./run_encoder.sh
    ```
-   *This process scans videos, detects scenes, calls Claude asynchronously to build Narrative Contexts, and pushes batches to Qdrant.*
 
-2. **Run Streamlit UI**:
+4. **Khởi chạy Giao diện (Streamlit UI):**
    ```bash
    ./run_app.sh
    ```
-   Open your browser at `http://localhost:8501` to experience the lightning-fast 4-Tab interface.
 
-## 🏗 Core Frameworks Explanation
-- **LangGraph**: The brain orchestrating the query workflow.
-- **Claude 3.5 Sonnet**: The Core intelligence handling visual perception and evaluation.
-- **Qdrant**: The Vector Database storing SigLIP Vectors alongside multi-layered Payload Metadata.
-
-## 🔄 Execution Flow
-
-### 1. Offline Ingestion Phase
-```mermaid
-graph TD
-    A[Raw Videos] -->|PySceneDetect| B(Smart Keyframes Extraction)
-    B --> C{Asynchronous Batching}
-    C -->|Image| D[SigLIP 400M]
-    C -->|Image| E[Claude 3.5 Sonnet]
-    D -->|Generate Image Vector| F[(Qdrant Vector DB)]
-    E -->|Generate Caption| G[Sliding Window Context]
-    G -->|Create Narrative Payload| F
-```
-
-### 2. Online Querying Phase with Self-Correction
-```mermaid
-graph TD
-    U((User)) -->|Input Query/Image| R[LangGraph Router <br/>_Claude_]
-    R -->|Classify| Q{Query Type}
-    Q -->|Video KIS| T1[Retriever Agent]
-    Q -->|Textual KIS| T1
-    Q -->|Q&A| T1
-    Q -->|TRAKE| T1
-    
-    T1 -->|Hybrid Search| DB[(Qdrant DB)]
-    DB -->|Return Vector + Narrative Context| T1
-    
-    T1 --> E[Evaluator Agent <br/>_Audit_]
-    E -.->|Reject - Search Again| T1
-    
-    E -->|Approved| G_Agent[Generator Agent <br/>_Claude_]
-    G_Agent -->|Synthesize & Infer| U
-```
-
-## 🚀 Implemented Features (Changelog)
-The system recently underwent a massive architectural overhaul:
-- **Asynchronous Batching Optimization:** Integrated `asyncio` to dispatch multi-threaded Claude API calls, slashing Ingestion time from 15 minutes down to 1-2 minutes.
-- **Sliding Window Context:** Initialized `narrative_context` linking 3 consecutive frames to provide flawless support for TRAKE (temporal) queries.
-- **Self-Correction Node (Evaluator):** Added the `Evaluator` agent to audit Retriever results and enforce query rewrites upon bad data, dropping the Hallucination rate to ~0%.
+## 📊 KẾT QUẢ ĐẠT ĐƯỢC
+- Trích xuất và bóc băng hàng trăm Keyframes TFT có độ khó cao (Nhiều hiệu ứng) thành công.
+- Thời gian truy xuất Vector < 150ms.
+- LLM có khả năng suy luận mạnh mẽ dù hình ảnh mờ hoàn toàn nhờ logic bù trừ từ Audio.

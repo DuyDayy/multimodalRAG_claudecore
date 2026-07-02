@@ -14,4 +14,4 @@ fi
 source .venv/bin/activate
 
 echo "Đang quét và xử lý video trong data/raw_videos..."
-python -m src.ingestion.offline_encoder
+.venv/bin/python -m src.ingestion.offline_encoder

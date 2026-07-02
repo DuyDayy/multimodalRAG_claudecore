@@ -4,6 +4,10 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 import torch
 from transformers import AutoProcessor, AutoModel
 from PIL import Image
+try:
+    from fastembed import TextEmbedding
+except ImportError:
+    TextEmbedding = None
 
 # For Image embeddings in a real system, you would use a local SigLIP model via HuggingFace transformers
 # Here we use a placeholder representation or fastembed if it supports vision
@@ -20,6 +24,13 @@ class MultimodalEmbedder:
         self.vision_processor = AutoProcessor.from_pretrained(self.vision_model_name)
         self.vision_model = AutoModel.from_pretrained(self.vision_model_name).to(self.device)
         self.vision_model.eval()
+        
+        # Text model (Multilingual E5 for Text embedding)
+        if TextEmbedding:
+            self.text_model = TextEmbedding(model_name="intfloat/multilingual-e5-large")
+        else:
+            self.text_model = None
+            print("WARNING: fastembed chưa được cài đặt. Text search sẽ không khả dụng.")
         
         self._init_collection()
         
@@ -61,18 +72,28 @@ class MultimodalEmbedder:
         image_paths = [f["path"] for f in frames_data]
         img_vectors = self.embed_image_batch(image_paths)
         
+        text_vectors = None
+        if self.text_model:
+            contexts = [f.get("narrative_context", "") for f in frames_data]
+            text_vectors = list(self.text_model.embed(contexts))
+        
         points = []
         for i, frame in enumerate(frames_data):
-            # Lưu caption vào payload để sau này dùng hoặc filter
+            # Tạo dual-vector nếu có model Text
+            vectors_dict = {"image": img_vectors[i]}
+            if text_vectors is not None:
+                vectors_dict["text"] = text_vectors[i].tolist()
+                
             point = PointStruct(
                 id=hash(frame["path"]) % (10 ** 8),
-                vector={"image": img_vectors[i]},
+                vector=vectors_dict,
                 payload={
                     "video_id": frame["video_id"],
                     "timestamp": frame["timestamp_sec"],
                     "frame_path": frame["path"],
                     "caption": frame.get("caption", ""),
                     "narrative_context": frame.get("narrative_context", ""),
+                    "audio_transcript": frame.get("audio_transcript", ""),
                     "type": "frame"
                 }
             )
@@ -80,22 +101,19 @@ class MultimodalEmbedder:
             
         self.client.upsert(self.collection_name, points)
         
-    def embed_text_siglip(self, text: str):
-        # Sử dụng SigLIP để mã hóa văn bản vào không gian vector 768-chiều (cùng không gian với ảnh)
-        inputs = self.vision_processor(text=[text], padding="max_length", return_tensors="pt").to(self.device)
-        with torch.no_grad():
-            outputs = self.vision_model.get_text_features(**inputs)
-            pooler_output = outputs.pooler_output
-            text_embed = pooler_output / pooler_output.norm(p=2, dim=-1, keepdim=True)
-        return text_embed.squeeze(0).cpu().tolist()
-
     def search_text_query(self, query: str, limit=5):
-        # Dùng cross-modal retrieval: embed text query bằng SigLIP và so sánh với vector "image"
-        query_vector = self.embed_text_siglip(query)
+        if not self.text_model:
+            print("ERROR: Không tìm thấy mô hình fastembed TextEmbedding.")
+            return []
+            
+        # Sử dụng BGE-M3 để mã hóa câu hỏi tiếng Việt
+        query_vector_gen = self.text_model.embed([query])
+        query_vector = list(query_vector_gen)[0].tolist()
+        
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
-            using="image",  # Phải tìm trong trường "image" vì ta đang map Text -> Image
+            using="text",  # Tìm kiếm trong trường "text" (Dual-Encoder)
             limit=limit
         )
         return results.points

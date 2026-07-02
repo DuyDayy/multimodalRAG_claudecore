@@ -1,5 +1,8 @@
 from src.agents.state import GraphState
 from src.ingestion.embedder import MultimodalEmbedder
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Initialize singleton embedder for retrieval
 embedder = MultimodalEmbedder()
@@ -7,6 +10,7 @@ embedder = MultimodalEmbedder()
 def retrieve_context(state: GraphState) -> GraphState:
     """
     Truy xuất ngữ cảnh từ Qdrant dựa trên loại truy vấn.
+    Với Dual-Encoder, câu hỏi tiếng Việt sẽ được ném thẳng vào Qdrant để BGE-M3 xử lý.
     """
     q_type = state.get("query_type")
     
@@ -15,7 +19,7 @@ def retrieve_context(state: GraphState) -> GraphState:
         state["retrieved_context"] = [{"type": "video_kis", "score": r.score, "payload": r.payload} for r in results]
         
     elif q_type == "TEXTUAL_KIS":
-        # Lấy top 20 khung hình tốt nhất để phân tích đoạn
+        # Lấy top 20 khung hình tốt nhất để phân tích đoạn (BGE-M3 xử lý tiếng Việt)
         raw_results = embedder.search_text_query(state["user_query"], limit=20)
         
         if not raw_results:

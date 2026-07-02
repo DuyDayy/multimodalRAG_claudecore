@@ -18,10 +18,13 @@ def encode_image_base64(image_path: str) -> str:
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-async def generate_caption_for_frame(llm: ChatOpenAI, image_path: str) -> str:
+async def generate_caption_for_frame(llm: ChatOpenAI, image_path: str, audio_transcript: str = "") -> str:
     try:
         base64_img = encode_image_base64(image_path)
-        prompt = "Hãy miêu tả ngắn gọn nhưng đầy đủ chi tiết về các hành động, con người, sự vật xuất hiện trong ảnh này. Dưới 50 từ."
+        
+        audio_context = f" Kèm theo đoạn hội thoại (audio) đang diễn ra: '{audio_transcript}'." if audio_transcript else ""
+        prompt = f"Đây là một khung hình.{audio_context} Hãy kết hợp thông tin hình ảnh và âm thanh (nếu có) để miêu tả ngắn gọn nhưng đầy đủ chi tiết bằng TIẾNG VIỆT về các hành động, con người, sự vật xuất hiện. Dưới 50 từ. Yêu cầu bắt buộc: KHÔNG sử dụng tiếng Anh."
+        
         messages = [
             HumanMessage(content=[
                 {"type": "text", "text": prompt},
@@ -39,7 +42,7 @@ async def encode_video_async(video_id: str, frames_info: list, llm: ChatOpenAI, 
     
     # Sinh Caption Asynchronous
     logger.info(f"Đang sinh caption đồng thời cho {len(frames_info)} keyframes của {video_id}...")
-    tasks = [generate_caption_for_frame(llm, frame["path"]) for frame in frames_info]
+    tasks = [generate_caption_for_frame(llm, frame["path"], frame.get("audio_transcript", "")) for frame in frames_info]
     captions = await asyncio.gather(*tasks)
     
     # Xây dựng Sliding Window (Narrative Context) và Batching
@@ -62,7 +65,8 @@ async def encode_video_async(video_id: str, frames_info: list, llm: ChatOpenAI, 
             "video_id": video_id,
             "timestamp_sec": timestamp_sec,
             "caption": current_caption,
-            "narrative_context": narrative_context
+            "narrative_context": narrative_context,
+            "audio_transcript": frame.get("audio_transcript", "")
         })
         
         if len(batch_data) >= BATCH_SIZE or i == len(frames_info) - 1:

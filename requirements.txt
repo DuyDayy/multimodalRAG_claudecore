@@ -15,3 +15,5 @@ torchvision
 transformers
 sentencepiece
 scenedetect[opencv]
+openai-whisper
+fastembed

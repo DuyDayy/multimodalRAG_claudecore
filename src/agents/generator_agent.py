@@ -40,15 +40,24 @@ def generate_answer(state: GraphState) -> GraphState:
             
     elif q_type == "QA" or q_type == "TRAKE":
         if context:
-            # Lấy top 3 ảnh (hoặc ít hơn) từ context và sắp xếp theo thời gian (timestamp_ms)
-            top_frames = context[:3]
-            top_frames_sorted = sorted(top_frames, key=lambda x: x["payload"].get("timestamp_ms", 0))
+            # Lấy top 3 ảnh (QA) hoặc toàn bộ ảnh (TRAKE) để bám sát chuỗi thời gian dài hạn
+            if q_type == "TRAKE":
+                top_frames = context
+            else:
+                top_frames = context[:3]
+                
+            # Sửa bug: field đúng là timestamp_sec chứ không phải timestamp_ms
+            top_frames_sorted = sorted(top_frames, key=lambda x: x.get("payload", {}).get("timestamp_sec", 0))
             
             prompt = f"""<instructions>
-Bạn là một trợ lý AI phân tích hình ảnh và video chuyên nghiệp (Video được cung cấp dưới dạng các khung hình liên tiếp theo trình tự thời gian).
-Hãy quan sát các bức ảnh được cung cấp dưới đây và trả lời câu hỏi của người dùng bằng tiếng Việt một cách tự nhiên và chính xác.
-Đặc biệt chú ý đến tính liên tục, hành động xảy ra trước/sau giữa các bức ảnh.
-Nếu thông tin trong ảnh không đủ để trả lời, hãy nói rõ là bạn không biết.
+Bạn là một Trợ lý AI Phân tích Video Đa phương thức chuyên nghiệp (áp dụng cho mọi lĩnh vực).
+Dưới đây là các khung hình được cắt từ video, kèm theo Lời thoại (Audio) và Chú thích (Caption) tương ứng cho từng khung hình.
+Nhiệm vụ của bạn là dung hợp cả ba nguồn thông tin: Hình ảnh, Lời thoại và Chú thích để trả lời câu hỏi.
+YÊU CẦU BẮT BUỘC:
+1. TRẢ LỜI 100% BẰNG TIẾNG VIỆT, KHÔNG SỬ DỤNG TIẾNG ANH (ngoại trừ thuật ngữ chuyên ngành).
+2. Kỹ năng cốt lõi: BẤT CỨ KHI NÀO hình ảnh bị mờ, không rõ nét, hoặc góc khuất, BẠN PHẢI sử dụng Lời thoại (Audio) và Chú thích để suy luận và đưa ra câu trả lời. Tuyệt đối không phàn nàn về chất lượng ảnh nếu Audio đã cung cấp đủ manh mối!
+3. Chú ý tính liên tục và diễn biến sự kiện giữa các mốc thời gian.
+4. Chỉ khi CẢ Hình ảnh, Lời thoại và Chú thích đều không có bất kỳ manh mối nào, bạn mới được phép nói: "Tôi không có đủ dữ liệu để trả lời câu hỏi này."
 </instructions>
 
 <question>
@@ -60,12 +69,26 @@ Nếu thông tin trong ảnh không đủ để trả lời, hãy nói rõ là b
             
             valid_images_found = False
             for i, frame in enumerate(top_frames_sorted):
-                img_path = frame["payload"].get("frame_path")
+                payload = frame.get("payload", {})
+                img_path = payload.get("frame_path")
+                audio_transcript = payload.get("audio_transcript", "")
+                narrative_context = payload.get("narrative_context", "")
+                caption = payload.get("caption", "")
+                
                 if img_path and os.path.exists(img_path):
                     base64_img = encode_image_base64(img_path)
+                    
+                    frame_text = f"Khung hình thứ {i+1} (Thời gian: {payload.get('formatted_time', 'N/A')}):\n"
+                    if audio_transcript:
+                        frame_text += f"- Lời thoại (Audio): {audio_transcript}\n"
+                    if narrative_context:
+                        frame_text += f"- Chuỗi bối cảnh: {narrative_context}\n"
+                    elif caption:
+                        frame_text += f"- Chú thích AI: {caption}\n"
+                    
                     content_array.append({
                         "type": "text", 
-                        "text": f"Khung hình thứ {i+1} (Thời gian: {frame['payload'].get('formatted_time', 'N/A')}):"
+                        "text": frame_text
                     })
                     content_array.append({
                         "type": "image_url", 

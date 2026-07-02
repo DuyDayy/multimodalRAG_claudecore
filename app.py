@@ -108,8 +108,18 @@ with tab4:
             st.write(result["draft_answer"])
             st.info("Timeline sự kiện:")
             
-            # Giả lập thanh timeline đơn giản cho UI
-            st.slider("Dòng thời gian (s)", min_value=0, max_value=60, value=(10, 20))
+            # Tính toán timeline động từ context
+            context_data = result.get("retrieved_context", [])
+            if context_data:
+                timestamps = [float(item.get("payload", {}).get("timestamp_sec", 0)) for item in context_data]
+                if timestamps:
+                    min_t = int(min(timestamps))
+                    max_t = int(max(timestamps))
+                    # Đảm bảo max_t > min_t cho slider hoạt động
+                    if max_t <= min_t:
+                        max_t = min_t + 1
+                    
+                    st.slider("Dòng thời gian sự kiện xuất hiện (s)", min_value=0, max_value=max(max_t + 10, 60), value=(min_t, max_t), disabled=True)
             st.json(result["retrieved_context"])
         else:
             st.warning("Vui lòng nhập chuỗi sự kiện.")
