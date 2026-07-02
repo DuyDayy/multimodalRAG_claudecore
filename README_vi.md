@@ -33,6 +33,35 @@ Hệ thống giải quyết triệt để bài toán kinh điển của RAG Vide
 - **Tốc Độ (PySceneDetect & Async Batching)**: Loại bỏ phương pháp cắt 1-2 FPS mù quáng. Dùng `AdaptiveDetector` giữ lại khung hình có chuyển cảnh. Sau đó, dùng `asyncio` gửi đồng loạt 16-32 request tới API, đẩy tốc độ Ingestion lên gấp 10 lần.
 - **Độ Chính Xác Tuyệt Đối (Sliding Window & Self-Correction)**: Thay vì chỉ có ảnh đơn lẻ, hệ thống gộp bối cảnh thời gian (Trước - Trọng tâm - Sau) vào Qdrant Payload. Khi truy vấn, Tác tử `Evaluator` (Người chấm điểm) sẽ kiểm tra kết quả; nếu phát hiện sai lệch, nó sẽ ép hệ thống tự động tìm kiếm lại, giảm tỷ lệ ảo giác (Hallucination) về 0.
 
+## 🧩 Công Nghệ, Kỹ Thuật & Mô Hình ở 3 Giai Đoạn Chính
+
+### Giai đoạn 1: Preprocess (Tiền xử lý & Đồng bộ Đa thể)
+- **Công nghệ/Thư viện:** OpenCV, PySceneDetect, FFmpeg.
+- **Kỹ thuật & Thuật toán:** 
+  - *Adaptive Content-Aware Scene Detection* (cắt cảnh dựa trên độ biến thiên không gian màu HSV).
+  - *Adaptive Dense Temporal Sampling* (lấy mẫu 1 frame/5s cho các cảnh kéo dài để bảo toàn độ phân giải thời gian).
+  - *Cross-Modal Time Alignment* (giao thoa cửa sổ thời gian $\pm2.5s$ để ghim Audio vào Frame ảnh).
+- **Model:** `openai-whisper` (Base model) dùng cho nhận dạng giọng nói (STT).
+
+### Giai đoạn 2: Encode (Mã hóa & Lập chỉ mục)
+- **Công nghệ/Thư viện:** HuggingFace Transformers, FastEmbed, Langchain.
+- **Kỹ thuật & Thuật toán:**
+  - *Dual-Encoder Architecture* (nhúng độc lập thay vì dùng CLIP).
+  - *Mean Pooling* cho vector văn bản, *Sigmoid Loss* (chống thắt cổ chai Softmax) cho vector hình ảnh.
+  - *HNSW (Hierarchical Navigable Small World)* cho đồ thị tìm kiếm ANN siêu tốc trong Qdrant.
+- **Model:**
+  - Vision: `google/siglip-so400m-patch14-384` (1152-dim).
+  - Text: `intfloat/multilingual-e5-large` (1024-dim, tối ưu Tiếng Việt).
+- **Database:** `Qdrant` (Lưu trữ Vector & Payload JSON).
+
+### Giai đoạn 3: Gen (Suy luận & Điều phối Đa tác vụ)
+- **Công nghệ/Thư viện:** LangGraph, Streamlit.
+- **Kỹ thuật & Thuật toán:**
+  - *Directed Acyclic Graph (DAG)* để quản lý State Machine (Router -> Retriever -> Generator).
+  - *Domain-Agnostic Context Injection* (kết nối ma trận Hình ảnh + Lời thoại + Chú thích để chữa bệnh mù bối cảnh cho LLM).
+  - *TRAKE (Temporal Retrieval & Alignment)* (sắp xếp nổi bọt mảng Vector theo `timestamp_sec` tuyệt đối để suy luận Nhân-Quả).
+- **Model:** `claude-sonnet-4-6` (hoặc các LLM S-Tier tương đương qua API proxy).
+
 ## 🛠 Yêu Cầu Cài Đặt (Prerequisites)
 - **Python 3.10+**
 - **Docker Desktop** (Dành cho Vector DB)
