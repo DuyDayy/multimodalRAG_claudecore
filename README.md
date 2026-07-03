@@ -1,144 +1,172 @@
-# Multimodal RAG System (AI Challenge) - Claude Core Architecture
+# MULTIMODAL VIDEO SEARCH & QA SYSTEM (Multimodal Video RAG)
 
-A state-of-the-art Multimodal Retrieval-Augmented Generation (RAG) system engineered for high-volume video processing. This version has been fully upgraded to the **Claude Core architecture**, integrating intelligent scene detection and batch processing to maximize both speed and accuracy (~100%).
+This project is a **Retrieval-Augmented Generation (RAG) system specifically designed for Video**. It allows users to ask questions via text or image to search for specific moments within videos and receive natural, highly accurate answers.
 
-*For the Vietnamese version of this document, please see [README_vi.md](README_vi.md).*
+The system is highly optimized to run locally on **Apple Silicon architecture (M4, 16GB RAM)**, leveraging the reasoning capabilities of the Claude 3.5 Sonnet LLM (via API).
 
-## 🌟 Features & Query Types
-The system supports 4 distinct query types through a Streamlit frontend:
-1. **Video KIS (Known-Item Search)**: Find an original source video based on a short query clip or keyframe image.
-2. **Textual KIS**: Retrieve specific video segments based on dense textual descriptions (achieves absolute accuracy thanks to LLM Captioning).
-3. **Q&A Query**: Extract answers to specific questions using video context (powered by **Claude 3.5 Sonnet**).
-4. **TRAKE (Temporal Retrieval & Alignment)**: Identify and align sequential events chronologically.
+---
 
-## 📁 Repository Structure
+## HIGH-LEVEL ARCHITECTURE
+
+This project surpasses traditional RAG systems by implementing three core architectural concepts:
+
+### 1. SEN (Super Encoding Network)
+In conventional multimodal RAG, images and text are separated into two independent vector spaces (e.g., CLIP for images, BERT for text). This creates a **"Semantic Gap"** when trying to cross-match between the two spaces.
+* **SEN Concept:** A network architecture that projects all modalities (Image, Audio, Text) into a single, Unified Vector Space.
+* **Project Application:** Although hardware limitations currently prevent running heavy SEN models directly (like VALOR or ImageBind), this project simulates the SEN mechanism using a **Dense Dual-Vector (SigLIP + E5)** running in parallel within the same Qdrant Payload. As a result, a video Frame is tightly coupled with its Narrative Context, forming a unified "Knowledge Snippet".
+
+### 2. Dual-Retriever Mechanism
+Dense Vectors (like SigLIP) are excellent at finding "semantically similar" concepts (e.g., typing "car" might retrieve a "truck"). However, Dense Vectors are notoriously poor at **Exact Matches**, especially for proper nouns, numbers, or text on signs.
+* **Dual-Retriever Mechanism:** We solve this by running two retrieval streams in parallel:
+  - **Dense Retrieval (Qdrant):** Captures the main idea, context, and visual shapes (using SigLIP/E5).
+  - **Sparse/Exact Retrieval (FAISS/BM25):** Captures absolute exact keywords (using OCR text).
+* In `retriever_agent.py`, the system fetches results from both streams and performs **Re-ranking** via a scoring merge. The final result is a perfect intersection of "correct meaning" and "exact keywords".
+
+### 3. Video-RAG (Retrieval-Augmented Generation for Video)
+Most current AI video systems simply feed the entire audio transcript (subtitles) into the LLM. If the video has no spoken words, the system goes blind.
+* **Video-RAG Architecture:** Instead of relying solely on audio, the system directly scans visual streams:
+  - **OCR (Optical Character Recognition):** Reads text on the screen (Signs, license plates, hardcoded subtitles).
+  - **DET (Object Detection):** Fragments and identifies static objects.
+* This "invisible" visual information is decoded into text and pushed into an Auxiliary Database. During a query, the AI (Decoupler Agent) intentionally searches for this information, allowing the system to answer extremely difficult questions that even a human skimming the video might miss (e.g., "What is the phone number written on the wall at minute 2?").
+
+---
+
+## MICRO-TO-MACRO INTEGRATION
+
+Similar to deep learning systems described in academic papers, this project does not operate as a monolith. It is a sophisticated combination of small modules. Below is the workflow diagram illustrating the integration from Micro to Macro:
+
+```mermaid
+graph TD
+    %% Node Definitions
+    subgraph MACRO [Macro-Level: Agentic Workflow & Reasoning]
+        UI([User Interface]) --> Router[Router Agent]
+        Router --> Decoupler[Decoupler Agent]
+        Eval{Evaluator Agent} -->|Score < 0.3| Retriever
+        Eval -->|Score >= 0.3| Gen[Generator Agent]
+        Gen -->|<think> CoT| UI
+    end
+
+    subgraph MESO [Meso-Level: Dual-Retrieval & Vector Spaces]
+        Decoupler -->|Dense Query| Retriever[Retriever Agent]
+        Decoupler -->|Sparse Query| Retriever
+        Retriever -->|Vector Search| Qdrant[(Qdrant Vector DB)]
+        Retriever -->|Keyword Search| Faiss[(FAISS DB)]
+        Qdrant -->|Top N Frames| Retriever
+        Faiss -->|Top N OCR| Retriever
+        Retriever -->|Merge & Re-rank| Eval
+    end
+
+    subgraph MICRO [Micro-Level: Modal Extraction & Embedding]
+        Video[/Video mp4/] --> |PySceneDetect| F[Keyframes]
+        Video --> |FFmpeg| A[Audio wav]
+        A --> |Whisper| T[Audio Transcript]
+        F --> |EasyOCR| O[OCR Text]
+        
+        F --> |SigLIP| E1[Image Dense Vector]
+        T --> |BGE-M3| E2[Text Dense Vector]
+        O --> |FAISS Index| E3[Sparse Keyword Index]
+        
+        E1 --> Qdrant
+        E2 --> Qdrant
+        E3 --> Faiss
+    end
+
+    %% Styling
+    style MACRO fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style MESO fill:#e6f3ff,stroke:#333,stroke-width:2px
+    style MICRO fill:#fff0f5,stroke:#333,stroke-width:2px
+```
+
+### Layer Analysis:
+1. **Micro-Level (Feature Extraction):** These are the lowest-level hardware "workers". The raw video is chopped into independent streams: Image, Audio, Text. Algorithms (SigLIP, BGE-M3, Whisper, EasyOCR) compress these physical streams into mathematical numbers (Vectors/Matrices).
+2. **Meso-Level (Storage & Retrieval):** The intersection of knowledge. It uses the **Dual-Retriever** mechanism. Instead of only performing fuzzy semantic searches (Dense Retrieval via Qdrant), it incorporates hard keyword searches (Sparse/Exact Retrieval via FAISS). The two result streams are Merged to create the most optimal dataset.
+3. **Macro-Level (LLM Reasoning):** Where the AI (Claude) truly shines. The Agents operate on a State Machine model. They don't blindly answer immediately; they know how to **Decouple the question**, **Evaluate the documents**, and most importantly, perform logical reasoning (**Chain-of-Thought**) before delivering the final result to the user.
+
+---
+
+## 1. CORE TECHNOLOGIES, ALGORITHMS & TECHNIQUES
+
+The system utilizes **Hybrid Search**, combining Dense Retrieval (Vector space) and Sparse/Exact Retrieval (Exact text search) to ensure no video semantics (Images, Dialogues, Handwriting/Signs) are missed.
+
+### A. Computer Vision
+* **PySceneDetect (Adaptive Scene Detection):** Instead of blindly cutting frames by time (e.g., 1 fps) which floods RAM, this algorithm calculates pixel/color changes (Thresholding & Histogram) between consecutive frames to detect "cuts". Only 1 representative frame is taken per scene (or 1 frame every 5s for long scenes), compressing video data immensely without losing content.
+* **EasyOCR:** A deep learning network (CNN + RNN) specialized in "reading screen text" (hardcoded subtitles, signs, text in video). This data is crucial for identification queries (e.g., "What is the license plate of the truck?").
+* **SigLIP (`google/siglip-so400m-patch14-384`):** Google's image embedding algorithm, an upgrade from CLIP. It converts an image into a mathematical vector (1152 dimensions) such that images with similar semantics are positioned closely in vector space.
+
+### B. Audio Processing
+* **FFmpeg:** Extracts the audio track from the original `.mp4` file into raw format (PCM WAV) to prepare for transcription.
+* **OpenAI Whisper (Base Model):** Automatic Speech Recognition (ASR). Transcribes spoken words into text, divided by timestamps to match the image frames.
+
+### C. Text Embedding
+* **BGE-M3 (`intfloat/multilingual-e5-large`):** A powerful multilingual text embedding algorithm (via `fastembed`). Converts user queries and video transcripts into vectors (1024 dimensions) for Cosine Similarity search.
+
+### D. Databases
+* **Qdrant (Vector Database):** A specialized DB for storing Dense Vectors (SigLIP, E5). Supports high-speed approximate search (HNSW Algorithm).
+* **FAISS (Facebook AI Similarity Search):** A Meta library used to create a local Auxiliary Database. Used to index and exactly search for vocabulary phrases (OCR, Transcripts) that Vector Databases sometimes misinterpret. This architecture is called **Video-RAG**.
+
+### E. Agentic Workflow
+* **LangGraph:** A framework for managing State Machine workflows. All reasoning processes (Ask -> Think -> Retrieve -> Evaluate -> Generate) are designed as graph Nodes.
+* **Claude 3.5 Sonnet (LLM):** Acts as the central Brain for 3 tasks: Decoupling complex questions, Evaluating document quality, and Generating answers with Chain-of-Thought (CoT) reasoning.
+
+---
+
+## 2. PROJECT STRUCTURE & FILE MEANINGS
+
 ```text
-.
-├── app.py                      # Main Streamlit UI application
-├── docker-compose.yml          # Infrastructure setup (Qdrant Vector DB, Redis)
-├── requirements.txt            # Python dependencies
-├── src/
-│   ├── agents/                 # LangGraph Multi-Agent System
-│   │   ├── graph.py            # Workflow definition & edge mapping
-│   │   ├── router_agent.py     # Classifies queries using Claude 3.5 Sonnet
-│   │   ├── retriever_agent.py  # Hybrid search via Qdrant
-│   │   ├── evaluator_agent.py  # Self-Correction node against hallucination
-│   │   └── generator_agent.py  # Response generation via Claude 3.5 Sonnet
-│   └── ingestion/              # Data Processing Pipeline (High Speed & Accuracy)
-│       ├── video_processor.py  # Smart Keyframe extraction via PySceneDetect
-│       ├── offline_encoder.py  # Asynchronous Batching & Sliding Window generation
-│       └── embedder.py         # Qdrant configuration & Narrative Payload handling
-└── test_data_samples/          # Directory for local sample videos
+multimodalRAG_claudecore/
+├── app.py                       # Streamlit UI entry point. Where users input queries.
+├── run_app.sh / run_encoder.sh  # Bash scripts for quick project startup.
+├── docker-compose.yml           # Docker config to launch Qdrant and Redis.
+│
+├── docs/                        # Deep-dive theory documentation (SEN, RAG Pipeline).
+├── faiss_dbs/                   # (Auto-generated) Contains .faiss and .json files for Video-RAG (OCR storage).
+│
+└── src/
+    ├── ingestion/               # PHASE 1: OFFLINE ENCODER - Runs once for new videos.
+    │   ├── offline_encoder.py   # Main orchestrator: scans videos, calls frame extraction, OCR, pushes to Qdrant.
+    │   ├── video_processor.py   # Contains PySceneDetect (cutting) and Whisper (transcription) logic.
+    │   ├── auxiliary_builder.py # Contains EasyOCR logic, reads text in images, saves to internal FAISS DB.
+    │   └── embedder.py          # Contains SigLIP and E5-large. Converts image/text to numbers, pushes to Qdrant.
+    │
+    └── agents/                  # PHASE 2: ONLINE RAG - Runs every time a user chats.
+        ├── state.py             # Defines data structure moving through the system (LangGraph Memory).
+        ├── graph.py             # Connects Agent files below into a closed workflow.
+        ├── router_agent.py      # LLM categorizes queries (Search? QA? Temporal logic?).
+        ├── query_decoupler.py   # LLM splits long queries into "Vision Branch" and "Text/OCR Branch".
+        ├── retriever_agent.py   # Search Engine. Uses decoupled queries to probe Qdrant and FAISS for Top 5 frames.
+        ├── evaluator_agent.py   # The Inspector. Grades if the Top 5 frames answer the query (Score > 0.3).
+        └── generator_agent.py   # LLM synthesizes the frames, "thinks" (<think>), and writes final answer.
 ```
 
-## 🧠 Core Architecture: "Smart Keyframes & LLM Narrative"
-This system resolves the two classic challenges of Video RAG (Speed and Logical Accuracy) through the following technologies:
-- **Speed (PySceneDetect & Async Batching)**: Moving away from the blind 1-2 FPS extraction method, the system utilizes `AdaptiveDetector` to extract transition frames. Utilizing `asyncio`, the system fires 16-32 concurrent API requests, boosting Ingestion speed by 10x.
-- **Absolute Accuracy (Sliding Window & Self-Correction)**: Instead of analyzing isolated frames, the system bundles temporal context (Previous - Focus - Next) into the Qdrant Payload. During retrieval, an `Evaluator` agent audits the results; if it detects irrelevant context, it forces a query rewrite, reducing hallucination to ~0%.
+---
 
-## 🧩 Technologies, Techniques & Models in 3 Main Phases
+## 3. DETAILED WORKFLOW IN ACTION
 
-### Phase 1: Preprocess (Data Extraction & Cross-Modal Alignment)
-- **Technologies/Libraries:** OpenCV, PySceneDetect, FFmpeg.
-- **Techniques & Algorithms:** 
-  - *Adaptive Content-Aware Scene Detection* (scene cutting based on HSV color space variance).
-  - *Adaptive Dense Temporal Sampling* (extracting 1 frame/5s for long scenes to preserve temporal resolution).
-  - *Cross-Modal Time Alignment* (intersecting a $\pm2.5s$ time window to pin Audio to Image Frames).
-- **Model:** `openai-whisper` (Base model) for Speech-to-Text (STT).
+### PHASE 1: INGESTION FLOW - `run_encoder.sh`
+*For Server/Admins to run when new videos are downloaded.*
 
-### Phase 2: Encode (Vectorization & Indexing)
-- **Technologies/Libraries:** HuggingFace Transformers, FastEmbed, Langchain.
-- **Techniques & Algorithms:**
-  - *Dual-Encoder Architecture* (independent embeddings instead of relying on CLIP).
-  - *Mean Pooling* for text vectors, *Sigmoid Loss* (preventing Softmax bottlenecks) for image vectors.
-  - *HNSW (Hierarchical Navigable Small World)* for ultra-fast ANN search graph in Qdrant.
-- **Models:**
-  - Vision: `google/siglip-so400m-patch14-384` (1152-dim).
-  - Text: `intfloat/multilingual-e5-large` (1024-dim, optimized for Vietnamese).
-- **Database:** `Qdrant` (Storing Vectors & JSON Payloads).
+1. `offline_encoder.py` scans the `data/raw_videos/` directory.
+2. Passes the `.mp4` file to `video_processor.py`.
+3. `video_processor.py` extracts the audio and uses **Whisper** to transcribe it to text (saved with timestamps).
+4. `video_processor.py` then uses **PySceneDetect** to detect pixel changes and extract representative Keyframes.
+5. For each Frame, it checks the timestamp and slices the matching Whisper text -> Creating a *Narrative Context*.
+6. Returns the Frame array to `offline_encoder.py`.
+7. `offline_encoder.py` passes this array to `auxiliary_builder.py`. Here, **EasyOCR** scans each image, reads all text, converts it to vectors, and saves them as `.faiss` files on the hard drive (Video-RAG architecture).
+8. Finally, `offline_encoder.py` pushes the Frame array to `embedder.py`. Images pass through **SigLIP**, Narrative context passes through **E5-Large** to become Vectors, which are then injected straight into **Qdrant**.
+*(This flow costs $0 in API fees, running 100% locally).*
 
-### Phase 3: Gen (Inference & Multi-Agent Orchestration)
-- **Technologies/Libraries:** LangGraph, Streamlit.
-- **Techniques & Algorithms:**
-  - *Directed Acyclic Graph (DAG)* for State Machine management (Router -> Retriever -> Generator).
-  - *Domain-Agnostic Context Injection* (concatenating Image + Audio + Caption matrices to cure LLM context blindness).
-  - *TRAKE (Temporal Retrieval & Alignment)* (Bubble sorting Vector arrays by absolute `timestamp_sec` for Causal inference).
-- **Model:** `claude-sonnet-4-6` (or equivalent S-Tier LLMs via proxy API).
+### PHASE 2: INFERENCE FLOW - `run_app.sh`
+*Runs continuously every time a user clicks Send.*
 
-## 🛠 Prerequisites
-- **Python 3.10+**
-- **Docker Desktop** (for Vector DB)
-- Proxy API Key supporting `claude-sonnet-4-6` configured in `.env`
-
-## 🚀 Installation
-
-1. **Set up Virtual Environment**:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-2. **Start Qdrant & Redis**:
-   ```bash
-   docker-compose up -d
-   ```
-3. **Configure API**: Create a `.env` file containing `OPENAI_API_KEY` and `OPENAI_BASE_URL` from your Claude Proxy provider.
-
-## 🎮 Running the System
-
-1. **Run Ingestion Pipeline (Offline Encoder)**:
-   ```bash
-   ./run_encoder.sh
-   ```
-   *This process scans videos, detects scenes, calls Claude asynchronously to build Narrative Contexts, and pushes batches to Qdrant.*
-
-2. **Run Streamlit UI**:
-   ```bash
-   ./run_app.sh
-   ```
-   Open your browser at `http://localhost:8501` to experience the lightning-fast 4-Tab interface.
-
-## 🏗 Core Frameworks Explanation
-- **LangGraph**: The brain orchestrating the query workflow.
-- **Claude 3.5 Sonnet**: The Core intelligence handling visual perception and evaluation.
-- **Qdrant**: The Vector Database storing SigLIP Vectors alongside multi-layered Payload Metadata.
-
-## 🔄 Execution Flow
-
-### 1. Offline Ingestion Phase
-```mermaid
-graph TD
-    A[Raw Videos] -->|PySceneDetect| B(Smart Keyframes Extraction)
-    B --> C{Asynchronous Batching}
-    C -->|Image| D[SigLIP 400M]
-    C -->|Image| E[Claude 3.5 Sonnet]
-    D -->|Generate Image Vector| F[(Qdrant Vector DB)]
-    E -->|Generate Caption| G[Sliding Window Context]
-    G -->|Create Narrative Payload| F
-```
-
-### 2. Online Querying Phase with Self-Correction
-```mermaid
-graph TD
-    U((User)) -->|Input Query/Image| R[LangGraph Router <br/>_Claude_]
-    R -->|Classify| Q{Query Type}
-    Q -->|Video KIS| T1[Retriever Agent]
-    Q -->|Textual KIS| T1
-    Q -->|Q&A| T1
-    Q -->|TRAKE| T1
-    
-    T1 -->|Hybrid Search| DB[(Qdrant DB)]
-    DB -->|Return Vector + Narrative Context| T1
-    
-    T1 --> E[Evaluator Agent <br/>_Audit_]
-    E -.->|Reject - Search Again| T1
-    
-    E -->|Approved| G_Agent[Generator Agent <br/>_Claude_]
-    G_Agent -->|Synthesize & Infer| U
-```
-
-## 🚀 Implemented Features (Changelog)
-The system recently underwent a massive architectural overhaul:
-- **Asynchronous Batching Optimization:** Integrated `asyncio` to dispatch multi-threaded Claude API calls, slashing Ingestion time from 15 minutes down to 1-2 minutes.
-- **Sliding Window Context:** Initialized `narrative_context` linking 3 consecutive frames to provide flawless support for TRAKE (temporal) queries.
-- **Self-Correction Node (Evaluator):** Added the `Evaluator` agent to audit Retriever results and enforce query rewrites upon bad data, dropping the Hallucination rate to ~0%.
+1. User inputs: *"When does the truck with the word 'Vinamilk' appear?"*
+2. **Router Agent:** Detects the temporal aspect and tags the query as `TEXTUAL_KIS` (Keyframe Search).
+3. **Decoupler Agent:** Claude reasons and splits the query in two:
+   - *Vision Query:* "The truck"
+   - *Video-RAG Query (OCR):* "Vinamilk"
+4. **Retriever Agent:** 
+   - Converts "The truck" into a vector, queries Qdrant to find Frames containing trucks.
+   - Queries the hard drive (FAISS) with "Vinamilk" to find Frames where EasyOCR previously read that word.
+   - Merges the two result sets, calculating cumulative scores. A frame with both a truck image and the word Vinamilk will rise to Top 1.
+5. **Evaluator Agent:** Checks the Top 1 score (e.g., 0.82 > 0.3 threshold). Allows PASS (Proceed).
+6. **Generator Agent:** Claude receives all info about the Top 1 Frame (Image path, timestamp, narrative context, OCR text). Claude opens a `<think>` tag to analyze logic, then answers: *"The Vinamilk truck appears at 01:24, while driving on the highway."*
+7. Returns the result + Image display to the Streamlit UI. Workflow ends.
