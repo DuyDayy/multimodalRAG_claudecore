@@ -22,6 +22,12 @@ Khi tìm kiếm trong RAG, Dense Vector (Vector nhúng như SigLIP) rất giỏi
   - **Sparse/Exact Retrieval (FAISS/BM25):** Bắt keyword chính xác tuyệt đối (Dùng OCR text).
 * Tại agent `retriever_agent.py`, hệ thống lấy kết quả từ cả 2 luồng này và **Re-rank (Xếp hạng lại)** bằng cách tính điểm cộng dồn (Merge). Kết quả cuối cùng là sự giao thoa hoàn hảo giữa "ý nghĩa đúng" và "từ khóa chuẩn".
 
+### 3. Video-ColBERT (Contextualized Late Interaction)
+Lấy cảm hứng từ bài báo khoa học **Video-ColBERT (CVPR)**, dự án từ bỏ cơ chế nén ảnh truyền thống (Mean Pooling) vốn làm mất đi các vật thể nhỏ bé (đặc biệt quan trọng trong Vlog đời thường, game, hay camera an ninh).
+* **Multi-Vector Representation:** Hệ thống không nén bức ảnh thành 1 vector, mà trích xuất nó thành một **ma trận các token** (ví dụ 729 mảnh patch cho mỗi ảnh).
+* **Late Interaction (MaxSim):** Khi người dùng đặt câu hỏi, từng từ vựng trong câu hỏi sẽ tự động quét qua toàn bộ 729 mảnh patch để tìm ra mảnh giống nó nhất. Điều này cho phép hệ thống tìm ra những chi tiết siêu nhỏ mờ nhạt ở góc màn hình mà các mô hình Single-Vector chắc chắn sẽ bỏ qua.
+* **Tích hợp Qdrant:** Quá trình tính toán MaxSim khổng lồ này được tăng tốc bằng cấu trúc `MultiVectorConfig` mới nhất của Qdrant.
+
 ### 3. Video-RAG (Retrieval-Augmented Generation for Video)
 Hầu hết các hệ thống xử lý video bằng AI hiện nay chỉ đơn giản là nạp toàn bộ transcript (phụ đề) vào LLM. Nếu video không có người nói, hệ thống sẽ mù tịt.
 * **Kiến trúc Video-RAG:** Không chỉ phụ thuộc vào âm thanh, hệ thống quét trực tiếp các luồng thị giác:
@@ -82,6 +88,12 @@ graph TD
 2. **Tầng Trung mô (Meso-Level - Storage & Retrieval):** Nơi giao thoa kiến thức. Nó sử dụng cơ chế **Dual-Retriever**. Thay vì chỉ tìm kiếm ngữ nghĩa mờ ảo (Dense Retrieval qua Qdrant), nó dùng thêm tìm kiếm từ khóa cứng (Sparse/Exact Retrieval qua FAISS). Hai luồng kết quả được gộp lại (Merge) để tạo ra tập dữ liệu hoàn hảo nhất.
 3. **Tầng Vĩ mô (Macro-Level - LLM Reasoning):** Nơi trí tuệ nhân tạo (Claude) thực sự thể hiện. Các Agents hoạt động theo mô hình Máy trạng thái (State Machine). Chúng không mù quáng trả lời ngay, mà biết **Bóc tách câu hỏi (Decouple)**, biết **Kiểm định tài liệu (Evaluate)**, và đặc biệt là biết **Tư duy logic (Chain-of-Thought)** trước khi xuất kết quả cuối cùng cho người dùng.
 
+### "Chất Kết Dính" (Làm sao để các công nghệ rời rạc phối hợp mượt mà?)
+Hệ thống này sử dụng hàng loạt công nghệ từ các hãng khác nhau (Google SigLIP, OpenAI Whisper, Meta FAISS, Anthropic Claude). Để chúng vận hành như một thực thể duy nhất, dự án sử dụng các kỹ thuật liên kết sau:
+- **Đồng bộ hóa Không gian - Thời gian (Spatio-Temporal Alignment):** Whisper (xử lý âm thanh) và PySceneDetect (xử lý hình ảnh) vốn mù tịt về nhau. Để liên kết, dự án sử dụng trục **Timestamp (Giây)** làm cầu nối. Lời thoại của Whisper được ánh xạ (map) khớp chính xác với Timestamp của khung hình được cắt ra, tạo thành một khối "Narrative Context" duy nhất.
+- **Dung hợp Đa không gian (Multi-Vector Fusion):** Thay vì cố ép Hình ảnh (SigLIP) và Văn bản (E5) vào chung một mảng dữ liệu chật hẹp, dự án lưu chúng ở 2 không gian Vector song song trong cùng một Payload của Qdrant. Khi truy vấn, thuật toán *Cross-modal* sẽ gọi cả 2 không gian này và dùng hàm MAX_SIM để "vắt" ra kết quả điểm cao nhất.
+- **Bộ nhớ Dòng chảy (State Graph Memory):** Các Agent (Decoupler, Retriever, Evaluator) bản chất là các LLM độc lập và "hay quên". Để chúng làm việc nhóm, dự án dùng **LangGraph** tạo ra một bộ nhớ chung gọi là `GraphState`. State này chảy như một dòng nước qua từng Agent. Agent trước xử lý xong sẽ ghi kết quả vào State để Agent sau đọc tiếp. Nhờ vậy, Claude có thể đóng 5 vai trò khác nhau mà luồng suy luận không bao giờ bị đứt đoạn.
+
 ---
 
 ## 1. CÁC CÔNG NGHỆ, THUẬT TOÁN & KỸ THUẬT LÕI
@@ -91,6 +103,7 @@ Hệ thống sử dụng phương pháp **Hybrid Search (Tìm kiếm lai)** kế
 ### A. Thị giác Máy tính (Computer Vision)
 * **PySceneDetect (Thuật toán Adaptive Scene Detection):** Thay vì cắt frame mù quáng theo thời gian (ví dụ 1 frame/giây) làm tràn RAM, thuật toán này tính toán sự thay đổi pixel/màu sắc (Thresholding & Histogram) giữa các frame liên tiếp để phát hiện "điểm cắt cảnh" (cut). Mỗi cảnh chỉ lấy 1 frame đại diện (hoặc 1 frame mỗi 5s nếu cảnh quá dài), giúp nén thông tin video xuống hàng chục lần mà không mất nội dung.
 * **EasyOCR (Optical Character Recognition):** Mạng nén học sâu (CNN + RNN) chuyên dùng để "đọc chữ trên màn hình" (chữ phụ đề cứng, bảng hiệu, văn bản trong video). Dữ liệu này cực kỳ quan trọng cho các câu hỏi mang tính định danh (Ví dụ: "Xe tải mang biển số mấy?").
+* **YOLO (Nhận diện vật thể Ultralytics):** Mạng nơ-ron phát hiện bounding box theo thời gian thực dùng để khoanh vùng và phân loại các thực thể vật lý trong khung hình. Bằng cách đếm số lượng và thiết lập mối quan hệ không gian của các vật thể, nó cung cấp metadata cấu trúc bổ trợ đắc lực cho các Dense Vector.
 * **SigLIP (`google/siglip-so400m-patch14-384`):** Thuật toán nhúng hình ảnh (Image Embedding) của Google, bản nâng cấp của CLIP. Nó chuyển đổi một bức ảnh thành 1 vector toán học (1152 chiều) sao cho các ảnh có ngữ nghĩa giống nhau (ví dụ: ảnh chó và ảnh sói) sẽ nằm gần nhau trong không gian.
 
 ### B. Xử lý Âm thanh (Audio Processing)
@@ -101,7 +114,7 @@ Hệ thống sử dụng phương pháp **Hybrid Search (Tìm kiếm lai)** kế
 * **BGE-M3 (`intfloat/multilingual-e5-large`):** Thuật toán mã hóa văn bản đa ngôn ngữ siêu mạnh (thông qua thư viện `fastembed`). Biến câu hỏi của người dùng và lời thoại video thành vector (1024 chiều) để tìm kiếm độ tương đồng Cosine (Cosine Similarity).
 
 ### D. Lưu trữ & Truy xuất (Databases)
-* **Qdrant (Vector Database):** Cơ sở dữ liệu chuyên dụng để lưu trữ các Dense Vector (SigLIP, E5). Hỗ trợ tìm kiếm xấp xỉ tốc độ cao (HNSW Algorithm).
+* **Qdrant (Vector Database - Multi-Vector Mode):** Cơ sở dữ liệu chuyên dụng để lưu trữ các Vector. Thay vì Dense Vector thông thường, dự án cấu hình Qdrant ở chế độ `MultiVectorConfig` (sử dụng toán tử `MAX_SIM`). Điều này biến Qdrant thành một cỗ máy tính toán Late Interaction khổng lồ cho kiến trúc Video-ColBERT.
 * **FAISS (Facebook AI Similarity Search):** Thư viện của Meta dùng để tạo CSDL phụ trợ cục bộ (Auxiliary Database). Dùng để index và search chính xác các cụm từ vựng (OCR, Lời thoại) mà Vector Database đôi khi nội suy sai lệch. Kiến trúc này được gọi là **Video-RAG**.
 
 ### E. Điều phối Tác tử AI (Agentic Workflow)

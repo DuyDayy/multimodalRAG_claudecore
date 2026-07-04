@@ -91,6 +91,7 @@ The system utilizes **Hybrid Search**, combining Dense Retrieval (Vector space) 
 ### A. Computer Vision
 * **PySceneDetect (Adaptive Scene Detection):** Instead of blindly cutting frames by time (e.g., 1 fps) which floods RAM, this algorithm calculates pixel/color changes (Thresholding & Histogram) between consecutive frames to detect "cuts". Only 1 representative frame is taken per scene (or 1 frame every 5s for long scenes), compressing video data immensely without losing content.
 * **EasyOCR:** A deep learning network (CNN + RNN) specialized in "reading screen text" (hardcoded subtitles, signs, text in video). This data is crucial for identification queries (e.g., "What is the license plate of the truck?").
+* **YOLO (Ultralytics Object Detection):** A real-time bounding box network used to localize and classify physical entities in the frame. By counting and mapping spatial relationships of objects, it provides structured metadata that complements dense vectors.
 * **SigLIP (`google/siglip-so400m-patch14-384`):** Google's image embedding algorithm, an upgrade from CLIP. It converts an image into a mathematical vector (1152 dimensions) such that images with similar semantics are positioned closely in vector space.
 
 ### B. Audio Processing
