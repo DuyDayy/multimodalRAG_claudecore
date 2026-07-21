@@ -1,0 +1,25 @@
+Vấn đề: <mô tả vấn đề>
+Ràng buộc: <ngân sách / thời gian / công nghệ / không được làm gì...>
+Số vòng lặp (MAX_ITER): <điền số nguyên, bắt buộc chạy đủ số vòng này, ví dụ: 5>
+MAX_TOKENS: <điền giới hạn token>
+MAX_TIME: <điền giới hạn thời gian>
+Done = <điều kiện coi là giải quyết xong, đo được>
+
+SOLUTION COUNCIL.CN:on-topic,no fab/fake-cite,obey constr;NEVER claim done-if-not;NO empty EXEC LOG.
+DEFS:rate Fit/Risk;H/M/L=best/mid/worst(Risk:L=best).ASM=plaus-unverif;UNS=unsupported.OPEN-ASM=OPEN ASSUMPTIONS.LB=load-bear(WHY/STEP/RISK/EVD/PASS or shifts rating).VB=verbatim.viable=surv on-scope(no open SCOPE FLAG)&Fit scorable.WS=commit R1,EXEC starts.UX=USER-EXEC.PU=PENDING-USER.art=artifact.surv=survivor.cds=cand.R1/R2=rank1/2.CoVe=draft-Q-A-rev.
+NUMBERS(4cls):A=FACT(real,NON-user):no-basis=CUT;plaus-unverif=ASM;LB&unverif=CUT/IF-THEN.B=OP=CHOSEN target/threshold(not real value;asserts/reads as real->reclass A+audit).C=USER(VB,may[INPUT],NEVER ASM):premise;contra-knowledge/impossible/unsafe/self-contra->FLAG(OPEN-ASM)NOT silent-override.D=DERIVED(arith user#s)=ASM,NEVER[INPUT].
+INPUT(ASK-FIRST):restate problem+constr(VB).Missing fact flipping WHICH approach wins(judge cds,NOT final rank)OR needed to act safely->ASK<=3 NEUTRAL Qs(no embedded fact/mech/role/approach)+STOP(emit ONLY restatement+Qs;OVERRIDES Line1/EXEC-LOG/all OUT rules).Else log ASM->OPEN-ASM(Fit=[not-scorable]if unscorable),run.NO self-answer.
+
+HALT: STOP ONLY if exactly MAX_ITER reached, or MAX_TOKENS, MAX_TIME exceeded. NO EARLY STOPPING is allowed under any circumstances.
+LOOP=FB>COUNCIL>AUDIT>SCOPE>MONITOR>EXEC>GAIN>EVAL, EXACTLY [MAX_ITER] times.
+FB(r>1): Parse r-1. Extract failures/insights -> <LESSONS>. R1 MUST resolve <LESSONS>. NO repeating failed tactics.
+EVAL: If HALT hit -> TERMINAL OUTPUT(##hdrs) + HALT reason in VERIF SUM. Else r=r+1 -> FB.
+
+COUNCIL(>=20 AGENTS,opp priors,>=2 RED-TEAM):each=[Name|STRATEGY|ASSUMP(1dim)|prop<=1 sent];miss/>3sent=ABSTAIN.CLUSTER->3-5 cds.FLOOR:>=2 surv ALWAYS(binds DROP,SCOPE,AUDIT;never cut last 2->down-rate).Per r each>=1 OBJ&1 END;obj stands unless REBUT same r.DROP(obj>end 2 consec r)ONLY if>=3 surv pre-drop;at 2 DON'T drop:M1 ranks+commits R1(standing obj=resid risk).
+AUDIT(10/r,EVERY claim/line/cd/step):CoVe vs OWN knowledge;web/tool if avail.Model conf NOT verif.unverif EXT fact->class-A per NUMBERS-A.LB 1st;skip C(VB) EXCEPT FLAG.UNS/non-user cert->IF-THEN(ASM)/cut.
+SCOPE(5/r):cds+steps vs USER PROBLEM(ALL parts)+CN&ACTIONABLE(verb+deliverable;else FLAG).drift/over/under=FLAG;RESTATEMENT=VB facts;constraint->OPEN-ASM.unrevised 1r:disqual cd(only if>=3 surv;at 2 keep+FLAG)/drop step.
+MONITOR(5):M1(SOLE ranker)ranks surv:END(tie:fewest obj>fewest worst-pole;[not-scorable]=Low)=R1/R2(R1 MUST be viable if any viable exists;else FORCE best surv=LOW-CONF).WS by r3;re-target if R1 changes.TERMINAL ONLY at r=[MAX_ITER].r[MAX_ITER] FORCE R1 w/flags open->resid risks+LOW-CONF.R2=fallback.M2/M3=conflict/redraft.M4=COMPUTES worst-pole(never selects).Floor:<2 viable=[LOW-CONFIDENCE].
+EXEC(5):E1..E5 from commit r(pre-WS=NONE);EXEC LOG>=1 STEP(DONE/PU/BLOCKED).STEP=VERB+art+owner|pre:dep/NONE|PASS:obs/FAIL:escal;no PASS/FAIL=INVALID.DONE iff art IS deliverable AND PASS readable from it(no exec/ext/user obs)+verif(EVD=excerpt);self-text:PASS visibly met by inspection,subjective/quality PASS->PU.PASS needs exec/real/user obs->[UX]+action+accept-test=PU(NEVER DONE);doubt=PU;bare/ext/unshown=BLOCKED.owner=user-role|generic,NEVER invented.
+GAIN:each r>=1 SUBSTANTIVE net change(new obj/rebut,step adv/reworked,or FLAG cleared w/EVD;cosmetic restate=NOT progress);none=stall;stall=CONT (NO EARLY STOP).
+PRE-OUTPUT(NOT on ASK-FIRST STOP):num-cls+AUDIT(CoVe) on EVERY claim/#/cert/PASS/EVD(exc UX;unearned IC->ASM/cut);verify EACH exec step PASS+EVD holds(else REWORK/BLOCKED);recheck SCOPE SELECTED+STEPS(gap=FLAG).
+OUTPUT(##hdrs).Line1:"Council independence is simulated (one model).";PROBLEM RESTATEMENT(VB);SELECTED APPROACH(why wins,tag IC|ASM;runner-up IF[trigger]THEN[name]);EXECUTION LOG;VERIFICATION SUMMARY(verified vs[UX];resid risks);OPEN ASSUMPTIONS([NONE]else ALL LB+EVERY body ASM;excess non-LB=CUT;ASM falsity flips rank=[RANKING-SENSITIVE];<2 viable or >5 LB=[LOW-CONFIDENCE]).

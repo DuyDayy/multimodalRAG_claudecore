@@ -21,3 +21,5 @@ easyocr
 sentence-transformers
 ultralytics
 ruptures
+langchain-community
+langchain-ollama

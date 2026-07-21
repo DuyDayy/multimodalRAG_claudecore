@@ -6,8 +6,12 @@ __pycache__/
 data/
 qdrant_storage/
 qdrant_storage_claude/
+redis_data/
+redis_data_claude/
+faiss_dbs/
 .system_generated/
 *.md
-!README.md
 !README_vi.md
+!docs/*.md
 docker-compose.yml
+prompt

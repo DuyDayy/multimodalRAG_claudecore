@@ -22,8 +22,8 @@ def retrieve_context(state: GraphState) -> GraphState:
         original_sketch = state["query_image_path"]
         generated_photo = translator.translate_sketch(original_sketch)
         
-        results_sketch = embedder.search_image_query(original_sketch)
-        results_photo = embedder.search_image_query(generated_photo) if original_sketch != generated_photo else []
+        results_sketch = embedder.search_image_by_image(original_sketch)
+        results_photo = embedder.search_image_by_image(generated_photo) if original_sketch != generated_photo else []
         
         fused = reciprocal_rank_fusion([results_sketch, results_photo])
         state["retrieved_context"] = [{"type": "video_kis", "score": r["rrf_score"], "payload": r["item"].payload} for r in fused]

@@ -9,11 +9,12 @@ try:
 except ImportError:
     TextEmbedding = None
 
-# For Image embeddings in a real system, you would use a local SigLIP model via HuggingFace transformers
-# Here we use a placeholder representation or fastembed if it supports vision
-# For simplicity on M4, we can use the Qdrant client and Fastembed for Text.
 
 class MultimodalEmbedder:
+    """
+    Bộ nhúng đa phương thức: SigLIP (Image) + E5-large (Text).
+    Tối ưu cho Apple M4 16GB RAM.
+    """
     def __init__(self, qdrant_url="http://localhost:6335", collection_name="multimodal_db"):
         self.client = QdrantClient(url=qdrant_url)
         self.collection_name = collection_name
@@ -31,41 +32,94 @@ class MultimodalEmbedder:
         else:
             self.text_model = None
             print("WARNING: fastembed chưa được cài đặt. Text search sẽ không khả dụng.")
-        
+            
         self._init_collection()
         
     def _init_collection(self):
         if not self.client.collection_exists(self.collection_name):
+            from qdrant_client.models import MultiVectorConfig, MultiVectorComparator, ScalarQuantizationConfig, ScalarType
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config={
-                    "text": VectorParams(size=1024, distance=Distance.COSINE), # Size matches bge-m3
-                    "image": VectorParams(size=1152, distance=Distance.COSINE) # Size for siglip-so400m-patch14-384
-                }
+                    "text": VectorParams(size=1024, distance=Distance.COSINE),
+                    "image": VectorParams(
+                        size=1152, 
+                        distance=Distance.COSINE,
+                        multivector_config=MultiVectorConfig(
+                            comparator=MultiVectorComparator.MAX_SIM
+                        )
+                    ),
+                },
+                quantization_config=ScalarQuantizationConfig(
+                    type=ScalarType.INT8,
+                    always_ram=True
+                )
             )
             
     def embed_image(self, image_path: str):
         image = Image.open(image_path).convert('RGB')
-        inputs = self.vision_processor(images=image, return_tensors="pt").to(self.device)
-        with torch.no_grad():
-            outputs = self.vision_model.get_image_features(**inputs)
-            # Normalize vector
-            pooler_output = outputs.pooler_output
-            img_embed = pooler_output / pooler_output.norm(p=2, dim=-1, keepdim=True)
-        return img_embed.squeeze(0).cpu().tolist()
-        
-    def embed_image_batch(self, image_paths: list):
-        images = [Image.open(p).convert('RGB') for p in image_paths]
-        inputs = self.vision_processor(images=images, return_tensors="pt").to(self.device)
+        crops = self._get_crops(image)
+        inputs = self.vision_processor(images=crops, return_tensors="pt").to(self.device)
         with torch.no_grad():
             outputs = self.vision_model.get_image_features(**inputs)
             pooler_output = outputs.pooler_output
             img_embeds = pooler_output / pooler_output.norm(p=2, dim=-1, keepdim=True)
         return img_embeds.cpu().tolist()
         
+    def _get_crops(self, image: Image.Image):
+        """Tạo 5 mảnh crop từ ảnh gốc để mô phỏng Patch-level Late Interaction (Video-ColBERT)."""
+        w, h = image.size
+        cw, ch = w // 2, h // 2
+        crops = [
+            image, # Toàn cảnh (Global)
+            image.crop((0, 0, cw, ch)), # Góc trên trái
+            image.crop((cw, 0, w, ch)), # Góc trên phải
+            image.crop((0, ch, cw, h)), # Góc dưới trái
+            image.crop((cw, ch, w, h)), # Góc dưới phải
+            image.crop((cw//2, ch//2, w - cw//2, h - ch//2)) # Trung tâm
+        ]
+        return crops
+
+    def embed_image_batch(self, image_paths: list):
+        """
+        Trích xuất Multi-Vector cho mỗi hình ảnh. Mỗi hình ảnh tạo ra 6 vector (Global + 5 Crops).
+        Qdrant sẽ dùng hàm MAX_SIM để chọn vector phù hợp nhất với câu hỏi.
+        """
+        all_crops = []
+        for p in image_paths:
+            img = Image.open(p).convert('RGB')
+            all_crops.extend(self._get_crops(img))
+            
+        img_vectors = []
+        batch_size = 12  # Xử lý 12 crops / batch để tránh lỗi OOM
+        for i in range(0, len(all_crops), batch_size):
+            batch = all_crops[i:i+batch_size]
+            inputs = self.vision_processor(images=batch, return_tensors="pt").to(self.device)
+            with torch.no_grad():
+                outputs = self.vision_model.get_image_features(**inputs)
+                
+                # SigLIP get_image_features trả về trực tiếp Tensor, không có pooler_output (nếu dùng phương thức get_image_features)
+                # Hoặc tuỳ version Transformers, nếu nó trả về đối tượng có pooler_output:
+                if hasattr(outputs, "pooler_output"):
+                    img_embeds = outputs.pooler_output
+                elif hasattr(outputs, "image_embeds"):
+                    img_embeds = outputs.image_embeds
+                else:
+                    img_embeds = outputs # Nếu trả về tensor trực tiếp
+                    
+                img_embeds = img_embeds / img_embeds.norm(p=2, dim=-1, keepdim=True)
+            img_vectors.extend(img_embeds.cpu().tolist())
+        
+        # Nhóm lại mỗi 6 vector thành 1 MultiVector tương ứng với 1 hình ảnh gốc
+        multi_vectors = []
+        for i in range(0, len(img_vectors), 6):
+            multi_vectors.append(img_vectors[i:i+6])
+            
+        return multi_vectors
+        
     def upsert_batch(self, frames_data: list):
         """
-        frames_data = [{"path": str, "video_id": str, "timestamp_sec": float, "caption": str}, ...]
+        frames_data = [{"path": str, "video_id": str, "timestamp_sec": float, ...}, ...]
         """
         if not frames_data: return
         
@@ -79,17 +133,24 @@ class MultimodalEmbedder:
         
         points = []
         for i, frame in enumerate(frames_data):
-            # Tạo dual-vector nếu có model Text
             vectors_dict = {"image": img_vectors[i]}
             if text_vectors is not None:
                 vectors_dict["text"] = text_vectors[i].tolist()
+                
+            # Tính timestamp dạng đọc được
+            ts = frame["timestamp_sec"]
+            minutes = int(ts // 60)
+            seconds = int(ts % 60)
+            formatted_time = f"{minutes:02d}:{seconds:02d}"
                 
             point = PointStruct(
                 id=hash(frame["path"]) % (10 ** 8),
                 vector=vectors_dict,
                 payload={
                     "video_id": frame["video_id"],
-                    "timestamp": frame["timestamp_sec"],
+                    "timestamp_sec": frame["timestamp_sec"],
+                    "timestamp_ms": int(frame["timestamp_sec"] * 1000),
+                    "formatted_time": formatted_time,
                     "frame_path": frame["path"],
                     "caption": frame.get("caption", ""),
                     "narrative_context": frame.get("narrative_context", ""),
@@ -106,14 +167,13 @@ class MultimodalEmbedder:
             print("ERROR: Không tìm thấy mô hình fastembed TextEmbedding.")
             return []
             
-        # Sử dụng BGE-M3 để mã hóa câu hỏi tiếng Việt
         query_vector_gen = self.text_model.embed([query])
         query_vector = list(query_vector_gen)[0].tolist()
         
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
-            using="text",  # Tìm kiếm trong trường "text" (Dual-Encoder)
+            using="text",
             limit=limit
         )
         return results.points
@@ -127,3 +187,26 @@ class MultimodalEmbedder:
             limit=limit
         )
         return results.points
+
+    def search_image_by_text(self, text_query: str, limit=5):
+        """Dùng Text Encoder của SigLIP để tìm kiếm trong không gian Image (Cross-modal Video-ColBERT)."""
+        inputs = self.vision_processor(text=[text_query], padding="max_length", return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.vision_model.get_text_features(**inputs)
+            if hasattr(outputs, "pooler_output"):
+                text_embed = outputs.pooler_output
+            elif hasattr(outputs, "text_embeds"):
+                text_embed = outputs.text_embeds
+            else:
+                text_embed = outputs
+            text_embed = text_embed / text_embed.norm(p=2, dim=-1, keepdim=True)
+            
+        query_vector = text_embed.squeeze(0).cpu().tolist()
+        results = self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            using="image",
+            limit=limit
+        )
+        return results.points
+

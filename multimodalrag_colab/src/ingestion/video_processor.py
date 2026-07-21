@@ -11,10 +11,10 @@ def extract_and_transcribe_audio(video_path: str) -> list:
     """
     return []
 
-def process_video(video_path: str, output_dir: str, resolution: str = "1280x720", step_seconds: float = 3.0):
+def process_video(video_path: str, output_dir: str, resolution: str = "1280x720", step_seconds: float = 3.0, audio_segments: list = None):
     """
     [TURBO MODE] Extracts keyframes from a video using Uniform Sampling.
-    Bỏ qua PySceneDetect và cấu trúc mã hóa chậm để tăng tốc x100.
+    Nếu audio_segments được cung cấp, nó sẽ tự động map câu thoại vào bức ảnh dựa trên mốc thời gian.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -48,11 +48,20 @@ def process_video(video_path: str, output_dir: str, resolution: str = "1280x720"
                 out_path = os.path.join(output_dir, f"{video_filename}_scene_{scene_idx:04d}.jpg")
                 cv2.imwrite(out_path, frame_resized)
                 
+                # Tìm câu thoại trùng khớp với mốc thời gian của khung hình
+                frame_text = ""
+                if audio_segments:
+                    for seg in audio_segments:
+                        # Nếu frame rơi vào đoạn thời gian của câu thoại này
+                        if seg["start"] <= current_sec <= seg["end"]:
+                            frame_text = seg["text"]
+                            break
+                
                 frames_paths.append({
                     "path": out_path,
                     "timestamp_sec": current_sec,
                     "scene_index": scene_idx,
-                    "audio_transcript": "" # Trống do tắt Whisper
+                    "audio_transcript": frame_text
                 })
             else:
                 break
